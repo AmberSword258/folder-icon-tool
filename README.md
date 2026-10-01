@@ -249,8 +249,20 @@ Add-Type -Path .\FolderIcon.Core.cs -ReferencedAssemblies System.Drawing, System
 .\FolderIconTool.ps1 -AutoScan 'E:\' -AutoCloseSeconds 30
 ```
 
-> ⚠️ **改代码时注意**：`.ps1` 文件**必须带 UTF-8 BOM**。
+> ⚠️ **改代码时注意 1**：`.ps1` 文件**必须带 UTF-8 BOM**。
 > Windows PowerShell 5.1 读取无 BOM 的 UTF-8 文件时会按 ANSI 解析，中文全部乱码并导致语法错误。
+> CI 里有一步专门强制检查这一点。
+
+> ⚠️ **改代码时注意 2**：**必须用 Windows PowerShell 5.1 验证，不要用 PowerShell 7（`pwsh`）**。
+> 本项目是 .NET Framework 桌面应用，PS7 环境下 `Add-Type` 的行为完全不同：
+>
+> | 现象 | 原因 |
+> |---|---|
+> | `error CS0234: 'Linq' does not exist in the namespace 'System'` | PS7 里 `-ReferencedAssemblies` 会**覆盖**默认引用集，把 `System.Linq` 弄丢 |
+> | `error CS1069: 'Bitmap' ... forwarded to 'System.Drawing.Common'` | PS7 基于 .NET Core，`System.Drawing` 被拆成 NuGet 包 |
+>
+> 这两点都**不代表真实用户环境**，所以 CI 用 `shell: powershell`（5.1）而不是 `shell: pwsh`。
+> 这个坑真实发生过：CI 第一次跑就红了，而本地 5.1 一直是绿的 —— 这正是 CI 的价值。
 
 ---
 
