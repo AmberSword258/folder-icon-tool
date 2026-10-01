@@ -281,6 +281,17 @@ Add-Type -Path .\FolderIcon.Core.cs -ReferencedAssemblies System.Drawing, System
 
 ---
 
+## 贡献
+
+欢迎 Issue 和 Pull Request，见 [CONTRIBUTORS.md](CONTRIBUTORS.md)。
+
+提交代码前请留意两条硬性要求（CI 会自动检查）：
+
+1. `.ps1` 文件**必须带 UTF-8 BOM**
+2. 用 **Windows PowerShell 5.1** 验证，不要用 PowerShell 7
+
+---
+
 <a id="english"></a>
 
 ## English
