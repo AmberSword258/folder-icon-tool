@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: 语法检查与核心引擎编译
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查 PowerShell 脚本语法
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $errors = $null; $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Host "::error file=$($_.Name)::$($errors.Count) 处语法错误"
+              $errors | Select-Object -First 10 | ForEach-Object {
+                Write-Host "  第 $($_.Extent.StartLineNumber) 行: $($_.Message)"
+              }
+              $failed = $true
+            } else {
+              Write-Host "OK  $($_.Name)"
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: 校验 .ps1 文件带 UTF-8 BOM
+        shell: pwsh
+        run: |
+          # Windows PowerShell 5.1 读取无 BOM 的 UTF-8 文件会按 ANSI 解析，
+          # 导致中文字符串乱码并直接语法报错，因此必须强制检查。
+          $failed = $false
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            $hasBom = $bytes.Length -ge 3 -and
+                      $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+            if ($hasBom) {
+              Write-Host "OK  $($_.Name) 带 BOM"
+            } else {
+              Write-Host "::error file=$($_.Name)::缺少 UTF-8 BOM，Windows PowerShell 5.1 下会乱码"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: 编译核心引擎
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -Path .\FolderIcon.Core.cs `
+            -ReferencedAssemblies System.Drawing, System.Windows.Forms
+          Write-Host "核心引擎编译通过"
+
+          # 冒烟测试：确认关键 API 都存在
+          $required = @(
+            'FolderIconTool.PeInspector',
+            'FolderIconTool.IconExtractor',
+            'FolderIconTool.IcoWriter',
+            'FolderIconTool.CandidateFinder',
+            'FolderIconTool.FolderIconManager'
+          )
+          foreach ($t in $required) {
+            if (-not ($t -as [type])) { Write-Host "::error::缺少类型 $t"; exit 1 }
+            Write-Host "OK  $t"
+          }
+
+      - name: 冒烟测试（图标生成与 ICO 结构）
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -Path .\FolderIcon.Core.cs `
+            -ReferencedAssemblies System.Drawing, System.Windows.Forms
+
+          # 用系统自带程序作为图标来源
+          $src = "$env:WINDIR\System32\notepad.exe"
+          $imgs = [FolderIconTool.IconExtractor]::ExtractMultiSize($src)
+          if ($imgs.Count -eq 0) { Write-Host "::error::未能提取到任何图标尺寸"; exit 1 }
+          Write-Host "提取尺寸: $(($imgs.Keys | Sort-Object) -join ',')"
+
+          $ico = Join-Path $env:TEMP 'ci-test.ico'
+          [FolderIconTool.IcoWriter]::Write($ico, $imgs)
+          $bytes = [System.IO.File]::ReadAllBytes($ico)
+          if ([BitConverter]::ToUInt16($bytes, 0) -ne 0) { Write-Host "::error::ICO reserved 字段错误"; exit 1 }
+          if ([BitConverter]::ToUInt16($bytes, 2) -ne 1) { Write-Host "::error::ICO type 字段错误"; exit 1 }
+          $count = [BitConverter]::ToUInt16($bytes, 4)
+          Write-Host "ICO 包含 $count 个图像，共 $($bytes.Length) 字节"
+
+          # 回读校验
+          $icon = New-Object System.Drawing.Icon($ico, 32, 32)
+          Write-Host "回读成功: $($icon.Width)x$($icon.Height)"
+          $icon.Dispose()
+          foreach ($k in $imgs.Keys) { $imgs[$k].Dispose() }
