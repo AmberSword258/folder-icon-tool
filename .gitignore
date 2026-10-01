@@ -1,0 +1,19 @@
+﻿# 开发期的临时产物
+test-output/
+*.tmp
+*.log
+
+# 开发期临时脚本（下划线开头的辅助脚本，不纳入版本管理）
+_*.ps1
+_*.txt
+
+# 构建/工具产物
+.venv/
+venv/
+node_modules/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*~
